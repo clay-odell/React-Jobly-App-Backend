@@ -1,6 +1,6 @@
 "use strict";
 
-const supabase = require("../db");
+const db = require("../db");
 const bcrypt = require("bcrypt");
 const { sqlForPartialUpdate } = require("../helpers/sql");
 const {
@@ -12,7 +12,6 @@ const {
 const { BCRYPT_WORK_FACTOR } = require("../config.js");
 
 /** Related functions for users. */
-
 class User {
   /** authenticate user with username, password.
    *
@@ -21,25 +20,26 @@ class User {
    * Throws UnauthorizedError if user not found or wrong password.
    **/
   static async authenticate(username, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      username,
-      password,
-    });
+    const result = await db.query(
+      `SELECT username,
+              password,
+              first_name AS "firstName",
+              last_name AS "lastName",
+              email,
+              is_admin AS "isAdmin"
+       FROM users
+       WHERE username = $1`,
+      [username]
+    );
 
-    if (error) {
-      throw new UnauthorizedError("Invalid username/password");
-    }
-
-    const user = data.user;
+    const user = result.rows[0];
 
     if (user) {
-      return {
-        username: user.user_metadata.username,
-        firstName: user.user_metadata.firstName,
-        lastName: user.user_metadata.lastName,
-        email: user.email,
-        isAdmin: user.user_metadata.isAdmin,
-      };
+      const isValid = await bcrypt.compare(password, user.password);
+      if (isValid === true) {
+        delete user.password;
+        return user;
+      }
     }
 
     throw new UnauthorizedError("Invalid username/password");
@@ -59,32 +59,34 @@ class User {
     email,
     isAdmin,
   }) {
-    const { data, error } = await supabase.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: {
-          username,
-          firstName,
-          lastName,
-          isAdmin,
-        },
-      },
-    });
+    const duplicateCheck = await db.query(
+      `SELECT username
+       FROM users
+       WHERE username = $1`,
+      [username]
+    );
 
-    if (error) {
+    if (duplicateCheck.rows[0]) {
       throw new BadRequestError(`Duplicate username: ${username}`);
     }
 
-    const user = data.user;
+    const hashedPassword = await bcrypt.hash(password, BCRYPT_WORK_FACTOR);
 
-    return {
-      username: user.user_metadata.username,
-      firstName: user.user_metadata.firstName,
-      lastName: user.user_metadata.lastName,
-      email: user.email,
-      isAdmin: user.user_metadata.isAdmin,
-    };
+    const result = await db.query(
+      `INSERT INTO users
+       (username,
+        password,
+        first_name,
+        last_name,
+        email,
+        is_admin)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING username, first_name AS "firstName", last_name AS "lastName", email, is_admin AS "isAdmin"`,
+      [username, hashedPassword, firstName, lastName, email, isAdmin]
+    );
+
+    const user = result.rows[0];
+    return user;
   }
 
   /** Find all users.
@@ -92,15 +94,17 @@ class User {
    * Returns [{ username, first_name, last_name, email, is_admin }, ...]
    **/
   static async findAll() {
-    const { data, error } = await supabase
-      .from("users")
-      .select("username, first_name, last_name, email, is_admin");
+    const result = await db.query(
+      `SELECT username,
+              first_name AS "firstName",
+              last_name AS "lastName",
+              email,
+              is_admin AS "isAdmin"
+       FROM users
+       ORDER BY username`
+    );
 
-    if (error) {
-      throw new NotFoundError("No users found");
-    }
-
-    return data;
+    return result.rows;
   }
 
   /** Given a username, return data about user.
@@ -111,26 +115,29 @@ class User {
    * Throws NotFoundError if user not found.
    **/
   static async get(username) {
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("username, first_name, last_name, email, is_admin")
-      .eq("username", username)
-      .single();
+    const userRes = await db.query(
+      `SELECT username,
+              first_name AS "firstName",
+              last_name AS "lastName",
+              email,
+              is_admin AS "isAdmin"
+       FROM users
+       WHERE username = $1`,
+      [username]
+    );
 
-    if (error) {
-      throw new NotFoundError(`No user: ${username}`);
-    }
+    const user = userRes.rows[0];
 
-    const { data: applications, error: applicationsError } = await supabase
-      .from("applications")
-      .select("job_id")
-      .eq("username", username);
+    if (!user) throw new NotFoundError(`No user: ${username}`);
 
-    if (applicationsError) {
-      throw new NotFoundError("Error fetching user applications");
-    }
+    const userApplicationsRes = await db.query(
+      `SELECT a.job_id
+       FROM applications AS a
+       WHERE a.username = $1`,
+      [username]
+    );
 
-    user.applications = applications.map((a) => a.job_id);
+    user.applications = userApplicationsRes.rows.map((a) => a.job_id);
     return user;
   }
 
@@ -156,30 +163,36 @@ class User {
       lastName: "last_name",
       isAdmin: "is_admin",
     });
+    const usernameVarIdx = "$" + (values.length + 1);
 
-    const { data: updatedUser, error } = await supabase
-      .from("users")
-      .update({ ...data })
-      .eq("username", username)
-      .select();
+    const querySql = `UPDATE users 
+                      SET ${setCols} 
+                      WHERE username = ${usernameVarIdx} 
+                      RETURNING username,
+                                first_name AS "firstName",
+                                last_name AS "lastName",
+                                email,
+                                is_admin AS "isAdmin"`;
+    const result = await db.query(querySql, [...values, username]);
+    const user = result.rows[0];
 
-    if (error) {
-      throw new NotFoundError(`No user: ${username}`);
-    }
+    if (!user) throw new NotFoundError(`No user: ${username}`);
 
-    return updatedUser[0];
+    return user;
   }
 
   /** Delete given user from database; returns undefined. */
   static async remove(username) {
-    const { data, error } = await supabase
-      .from("users")
-      .delete()
-      .eq("username", username);
+    const result = await db.query(
+      `DELETE
+       FROM users
+       WHERE username = $1
+       RETURNING username`,
+      [username]
+    );
+    const user = result.rows[0];
 
-    if (error) {
-      throw new NotFoundError(`No user: ${username}`);
-    }
+    if (!user) throw new NotFoundError(`No user: ${username}`);
   }
 
   /** Apply for job: update db, returns undefined.
@@ -188,33 +201,31 @@ class User {
    * - jobId: job id
    **/
   static async applyToJob(username, jobId) {
-    const { data: job, error: jobError } = await supabase
-      .from("jobs")
-      .select("id")
-      .eq("id", jobId)
-      .single();
+    const preCheck = await db.query(
+      `SELECT id
+       FROM jobs
+       WHERE id = $1`,
+      [jobId]
+    );
+    const job = preCheck.rows[0];
 
-    if (jobError) {
-      throw new NotFoundError(`No job: ${jobId}`);
-    }
+    if (!job) throw new NotFoundError(`No job: ${jobId}`);
 
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("username")
-      .eq("username", username)
-      .single();
+    const preCheck2 = await db.query(
+      `SELECT username
+       FROM users
+       WHERE username = $1`,
+      [username]
+    );
+    const user = preCheck2.rows[0];
 
-    if (userError) {
-      throw new NotFoundError(`No username: ${username}`);
-    }
+    if (!user) throw new NotFoundError(`No username: ${username}`);
 
-    const { data, error } = await supabase
-      .from("applications")
-      .insert([{ job_id: jobId, username }]);
-
-    if (error) {
-      throw new Error("Failed to apply for job");
-    }
+    await db.query(
+      `INSERT INTO applications (job_id, username)
+       VALUES ($1, $2)`,
+      [jobId, username]
+    );
   }
 }
 
