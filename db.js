@@ -1,23 +1,25 @@
-"use strict";
-/** Database setup for jobly. */
-const { Client } = require("pg");
-const { getDatabaseUri } = require("./config");
+require('dotenv').config();
+const { Client } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 
-let db;
+// Supabase configuration
+const supabaseUrl = 'https://nvxuqdswkjjdkkumwfxv.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-if (process.env.NODE_ENV === "production") {
-  db = new Client({
-    connectionString: getDatabaseUri(),
-    ssl: {
-      rejectUnauthorized: false
-    }
-  });
-} else {
-  db = new Client({
-    connectionString: getDatabaseUri()
-  });
-}
+// PostgreSQL configuration
+const client = new Client({
+  host: process.env.PGHOST,
+  port: process.env.PGPORT,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE
+});
 
-db.connect();
+// Connect to PostgreSQL
+client.connect()
+  .then(() => console.log('Connected to Supabase database'))
+  .catch(err => console.error('Connection error', err.stack));
 
-module.exports = db;
+
+module.exports = { client, supabase };
