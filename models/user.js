@@ -34,7 +34,7 @@ class User {
 
     if (user) {
       return {
-        username: user.email,
+        username: user.user_metadata.username,
         firstName: user.user_metadata.firstName,
         lastName: user.user_metadata.lastName,
         email: user.email,
@@ -51,18 +51,25 @@ class User {
    *
    * Throws BadRequestError on duplicates.
    **/
-  static async register({ username, password, firstName, lastName, email, isAdmin }) {
+  static async register({
+    username,
+    password,
+    firstName,
+    lastName,
+    email,
+    isAdmin,
+  }) {
     const { data, error } = await supabase.auth.signUp({
-      username,
-      password,
+      email: email,
+      password: password,
       options: {
         data: {
+          username,
           firstName,
           lastName,
-          email,
           isAdmin,
-        }
-      }
+        },
+      },
     });
 
     if (error) {
@@ -72,7 +79,7 @@ class User {
     const user = data.user;
 
     return {
-      username: user.email,
+      username: user.user_metadata.username,
       firstName: user.user_metadata.firstName,
       lastName: user.user_metadata.lastName,
       email: user.email,
@@ -86,11 +93,11 @@ class User {
    **/
   static async findAll() {
     const { data, error } = await supabase
-      .from('users')
-      .select('username, first_name, last_name, email, is_admin');
+      .from("users")
+      .select("username, first_name, last_name, email, is_admin");
 
     if (error) {
-      throw new NotFoundError('No users found');
+      throw new NotFoundError("No users found");
     }
 
     return data;
@@ -105,9 +112,9 @@ class User {
    **/
   static async get(username) {
     const { data: user, error } = await supabase
-      .from('users')
-      .select('username, first_name, last_name, email, is_admin')
-      .eq('username', username)
+      .from("users")
+      .select("username, first_name, last_name, email, is_admin")
+      .eq("username", username)
       .single();
 
     if (error) {
@@ -115,15 +122,15 @@ class User {
     }
 
     const { data: applications, error: applicationsError } = await supabase
-      .from('applications')
-      .select('job_id')
-      .eq('username', username);
+      .from("applications")
+      .select("job_id")
+      .eq("username", username);
 
     if (applicationsError) {
-      throw new NotFoundError('Error fetching user applications');
+      throw new NotFoundError("Error fetching user applications");
     }
 
-    user.applications = applications.map(a => a.job_id);
+    user.applications = applications.map((a) => a.job_id);
     return user;
   }
 
@@ -144,18 +151,16 @@ class User {
       data.password = await bcrypt.hash(data.password, BCRYPT_WORK_FACTOR);
     }
 
-    const { setCols, values } = sqlForPartialUpdate(
-      data,
-      {
-        firstName: "first_name",
-        lastName: "last_name",
-        isAdmin: "is_admin",
-      });
+    const { setCols, values } = sqlForPartialUpdate(data, {
+      firstName: "first_name",
+      lastName: "last_name",
+      isAdmin: "is_admin",
+    });
 
     const { data: updatedUser, error } = await supabase
-      .from('users')
+      .from("users")
       .update({ ...data })
-      .eq('username', username)
+      .eq("username", username)
       .select();
 
     if (error) {
@@ -168,9 +173,9 @@ class User {
   /** Delete given user from database; returns undefined. */
   static async remove(username) {
     const { data, error } = await supabase
-      .from('users')
+      .from("users")
       .delete()
-      .eq('username', username);
+      .eq("username", username);
 
     if (error) {
       throw new NotFoundError(`No user: ${username}`);
@@ -184,9 +189,9 @@ class User {
    **/
   static async applyToJob(username, jobId) {
     const { data: job, error: jobError } = await supabase
-      .from('jobs')
-      .select('id')
-      .eq('id', jobId)
+      .from("jobs")
+      .select("id")
+      .eq("id", jobId)
       .single();
 
     if (jobError) {
@@ -194,9 +199,9 @@ class User {
     }
 
     const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('username')
-      .eq('username', username)
+      .from("users")
+      .select("username")
+      .eq("username", username)
       .single();
 
     if (userError) {
@@ -204,11 +209,11 @@ class User {
     }
 
     const { data, error } = await supabase
-      .from('applications')
+      .from("applications")
       .insert([{ job_id: jobId, username }]);
 
     if (error) {
-      throw new Error('Failed to apply for job');
+      throw new Error("Failed to apply for job");
     }
   }
 }
