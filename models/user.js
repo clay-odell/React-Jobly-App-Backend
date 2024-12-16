@@ -22,7 +22,7 @@ class User {
    **/
   static async authenticate(username, password) {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: username,
+      username,
       password,
     });
 
@@ -53,12 +53,13 @@ class User {
    **/
   static async register({ username, password, firstName, lastName, email, isAdmin }) {
     const { data, error } = await supabase.auth.signUp({
-      email: username,
+      username,
       password,
       options: {
         data: {
           firstName,
           lastName,
+          email,
           isAdmin,
         }
       }
