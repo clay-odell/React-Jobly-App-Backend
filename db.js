@@ -1,25 +1,11 @@
 require('dotenv').config();
-const { Client } = require('pg');
 const { createClient } = require('@supabase/supabase-js');
+const { SECRET_KEY } = require('./config');
 
 // Supabase configuration
-const supabaseUrl = 'https://nvxuqdswkjjdkkumwfxv.supabase.co';
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseUrl = 'https://nvxuqdswkjjdkkumwfxv.supabase.co'; // Replace with your actual Project URL
+const supabaseKey = SECRET_KEY; // Make sure this key is set in your .env file
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// PostgreSQL configuration
-const client = new Client({
-  host: process.env.PGHOST,
-  port: process.env.PGPORT,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE
-});
-
-// Connect to PostgreSQL
-client.connect()
-  .then(() => console.log('Connected to Supabase database'))
-  .catch(err => console.error('Connection error', err.stack));
-
-
-module.exports = { client, supabase };
+module.exports = supabase;

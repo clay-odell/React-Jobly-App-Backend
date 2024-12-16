@@ -12,7 +12,6 @@ const authRoutes = require("./routes/auth");
 const companiesRoutes = require("./routes/companies");
 const usersRoutes = require("./routes/users");
 const jobsRoutes = require("./routes/jobs");
-const { client, supabase } = require("./db");
 
 const morgan = require("morgan");
 
